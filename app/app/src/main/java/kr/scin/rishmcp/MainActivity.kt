@@ -16,6 +16,7 @@ import androidx.lifecycle.lifecycleScope
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.textfield.TextInputEditText
 import kotlinx.coroutines.launch
+import kr.scin.rishmcp.Prefs.adbHost
 import kr.scin.rishmcp.Prefs.adbPort
 import kr.scin.rishmcp.Prefs.deviceToken
 import kr.scin.rishmcp.Prefs.enabled
@@ -44,6 +45,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var pairingPortField: TextInputEditText
     private lateinit var pairingCodeField: TextInputEditText
     private lateinit var connectPortField: TextInputEditText
+    private lateinit var adbHostField: TextInputEditText
 
     private val ui = Handler(Looper.getMainLooper())
     private val ticker = object : Runnable {
@@ -69,6 +71,7 @@ class MainActivity : AppCompatActivity() {
         pairingPortField = findViewById(R.id.pairingPortField)
         pairingCodeField = findViewById(R.id.pairingCodeField)
         connectPortField = findViewById(R.id.connectPortField)
+        adbHostField = findViewById(R.id.adbHostField)
 
         findViewById<TextView>(R.id.subtitle).text =
             if (DeviceProfile.isWatch(this)) "Wear OS · ADB shell → MCP" else "ADB shell → MCP agent"
@@ -76,6 +79,7 @@ class MainActivity : AppCompatActivity() {
         relayField.setText(relayUrl)
         tokenField.setText(deviceToken)
         if (adbPort > 0) connectPortField.setText(adbPort.toString())
+        adbHostField.setText(adbHost)
 
         // Wireless-debugging pairing (adb pair) only exists on Android 11+;
         // below that, the only path is the PC+adb tcpip bridge.
@@ -156,15 +160,17 @@ class MainActivity : AppCompatActivity() {
     private fun pairAdb() {
         val port = pairingPortField.text.toString().trim().toIntOrNull()
         val code = pairingCodeField.text.toString().trim()
+        val host = adbHostField.text.toString().trim().ifBlank { "127.0.0.1" }
         if (port == null || port <= 0 || code.isBlank()) {
             toast("Enter the pairing port and code")
             return
         }
+        adbHost = host
         lifecycleScope.launch {
             AgentState.shell = "pairing…"
             render()
             val ok = try {
-                AdbShellClient.getInstance(this@MainActivity).pairWireless("127.0.0.1", port, code)
+                AdbShellClient.getInstance(this@MainActivity).pairWireless(host, port, code)
             } catch (e: Throwable) {
                 false
             }
@@ -181,6 +187,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
         adbPort = port
+        adbHost = adbHostField.text.toString().trim().ifBlank { "127.0.0.1" }
         toast("adb port saved")
         if (AgentState.serviceRunning) AgentService.start(this, reconnect = true)
         render()
