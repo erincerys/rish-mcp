@@ -53,6 +53,9 @@ dependencies {
     // Self-signed X.509 cert generation for the ADB auth key pair (no AOSP
     // sun.security.x509 classes on Android otherwise); used by AdbShellClient.
     implementation("com.github.MuntashirAkon:sun-security-android:1.1")
+    // TLSv1.3 with exported keying material for wireless-debugging pairing;
+    // libadb loads Conscrypt reflectively and pairing fails without it.
+    implementation("org.conscrypt:conscrypt-android:2.5.3")
 
     // Low-spec device wake path (docs/DESIGN.md §3.2, roadmap step 4).
     // Harmless to depend on ahead of time: FcmWakeReceiver only does
