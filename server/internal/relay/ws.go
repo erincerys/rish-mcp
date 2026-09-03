@@ -147,6 +147,11 @@ func registerAgent(reg *Registry, conn *websocket.Conn, q url.Values) {
 	registerAgentPing(reg, conn, q, pingIntervalFor(NormalizeKind(q.Get("kind"))))
 }
 
+// activeWindow is how long after the last MCP call the relay keeps pinging
+// agents. Outside it the ping loop goes silent (no pings, no stale
+// termination) so an idle phone can doze; the agent redials when it wakes.
+const activeWindow = 5 * time.Minute
+
 // pingIntervalFor returns how often a device of the given kind should be
 // pinged. Wear OS pings less often to let the radio sleep.
 func pingIntervalFor(kind Kind) time.Duration {
@@ -228,11 +233,25 @@ func registerAgentPing(reg *Registry, conn *websocket.Conn, q url.Values, pingEv
 	go func() {
 		ticker := time.NewTicker(pingEvery)
 		defer ticker.Stop()
+		wasActive := true
 		for {
 			select {
 			case <-done:
 				return
 			case <-ticker.C:
+				if !reg.ActiveWithin(activeWindow) {
+					wasActive = false
+					continue
+				}
+				if !wasActive {
+					// Resuming after an idle stretch: lastSeen is stale by
+					// construction (no pings were sent), not because the
+					// connection is dead. Reset before judging staleness.
+					d.mu.Lock()
+					d.lastSeen = time.Now()
+					d.mu.Unlock()
+				}
+				wasActive = true
 				d.mu.Lock()
 				stale := time.Since(d.lastSeen) > staleAfter
 				d.mu.Unlock()
