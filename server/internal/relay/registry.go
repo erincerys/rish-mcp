@@ -95,15 +95,58 @@ type DeviceInfo struct {
 
 // Registry tracks all devices currently connected to the relay.
 type Registry struct {
-	mu      sync.RWMutex
-	devices map[string]*Device
+	mu             sync.RWMutex
+	devices        map[string]*Device
+	addedBroadcast chan struct{}
+
+	waker    func(context.Context)
+	wakeWait time.Duration
 
 	activityMu   sync.Mutex
 	lastActivity time.Time
 }
 
-func NewRegistry() *Registry {
-	return &Registry{devices: make(map[string]*Device)}
+type Option func(*Registry)
+
+// WithWaker makes MCP calls that find no device call wake, then wait up to
+// wait for a device to register before failing.
+func WithWaker(wake func(context.Context), wait time.Duration) Option {
+	return func(r *Registry) {
+		r.waker = wake
+		r.wakeWait = wait
+	}
+}
+
+func NewRegistry(opts ...Option) *Registry {
+	r := &Registry{devices: make(map[string]*Device), addedBroadcast: make(chan struct{})}
+	for _, opt := range opts {
+		opt(r)
+	}
+	return r
+}
+
+func (r *Registry) wakeAndWait(ctx context.Context) bool {
+	if r.waker == nil {
+		return false
+	}
+	r.waker(ctx)
+	deadline := time.NewTimer(r.wakeWait)
+	defer deadline.Stop()
+	for {
+		r.mu.RLock()
+		present, added := len(r.devices) > 0, r.addedBroadcast
+		r.mu.RUnlock()
+		if present {
+			return true
+		}
+		select {
+		case <-added:
+		case <-deadline.C:
+			return false
+		case <-ctx.Done():
+			return false
+		}
+	}
 }
 
 // touchActivity marks the relay as having served an MCP call just now. The
@@ -129,6 +172,8 @@ func (r *Registry) add(d *Device) *Device {
 	defer r.mu.Unlock()
 	old := r.devices[d.ID]
 	r.devices[d.ID] = d
+	close(r.addedBroadcast)
+	r.addedBroadcast = make(chan struct{})
 	return old
 }
 
@@ -170,6 +215,18 @@ func (r *Registry) List() []DeviceInfo {
 		})
 	}
 	return out
+}
+
+// ListAwake is List for MCP callers: with no device registered it first
+// tries to wake one.
+func (r *Registry) ListAwake(ctx context.Context) []DeviceInfo {
+	r.mu.RLock()
+	empty := len(r.devices) == 0
+	r.mu.RUnlock()
+	if empty {
+		r.wakeAndWait(ctx)
+	}
+	return r.List()
 }
 
 // resolve picks the target device: the explicit id, or the sole connected
@@ -226,6 +283,9 @@ func (r *Registry) resolve(deviceID string) (*Device, error) {
 func (r *Registry) Exec(ctx context.Context, deviceID, cmd string, timeout time.Duration) (Result, error) {
 	r.touchActivity()
 	d, err := r.resolve(deviceID)
+	if (errors.Is(err, ErrNoDevice) || errors.Is(err, ErrDeviceNotFound)) && r.wakeAndWait(ctx) {
+		d, err = r.resolve(deviceID)
+	}
 	if err != nil {
 		return Result{}, err
 	}

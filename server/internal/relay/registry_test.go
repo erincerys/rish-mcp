@@ -90,6 +90,75 @@ func TestRegistryListSnapshot(t *testing.T) {
 	}
 }
 
+func TestRegistryExecWakesAbsentDevice(t *testing.T) {
+	server, client := testDevicePair(t)
+	wakes := make(chan struct{}, 4)
+	var r *Registry
+	r = NewRegistry(WithWaker(func(context.Context) {
+		wakes <- struct{}{}
+		go func() {
+			time.Sleep(20 * time.Millisecond)
+			r.add(newTestDevice("one", server))
+		}()
+	}, 2*time.Second))
+
+	go func() {
+		_, raw, err := client.ReadMessage()
+		if err != nil {
+			t.Errorf("agent read exec frame: %v", err)
+			return
+		}
+		var frame execFrame
+		if err := json.Unmarshal(raw, &frame); err != nil {
+			t.Errorf("decode exec frame: %v", err)
+			return
+		}
+		r.resolveResult("one", frame.ReqID, Result{Stdout: "woke"})
+	}()
+
+	got, err := r.Exec(context.Background(), "", "id", time.Second)
+	if err != nil {
+		t.Fatalf("Exec after wake: %v", err)
+	}
+	if got.Stdout != "woke" || len(wakes) != 1 {
+		t.Fatalf("got %#v after %d wakes", got, len(wakes))
+	}
+}
+
+func TestRegistryWakeGivesUpAfterWait(t *testing.T) {
+	wakes := 0
+	r := NewRegistry(WithWaker(func(context.Context) { wakes++ }, 50*time.Millisecond))
+
+	start := time.Now()
+	if _, err := r.Exec(context.Background(), "", "id", time.Second); !errors.Is(err, ErrNoDevice) {
+		t.Fatalf("got %v, want ErrNoDevice", err)
+	}
+	if wakes != 1 || time.Since(start) > time.Second {
+		t.Fatalf("wakes=%d elapsed=%s", wakes, time.Since(start))
+	}
+	if devices := r.ListAwake(context.Background()); len(devices) != 0 || wakes != 2 {
+		t.Fatalf("ListAwake: devices=%d wakes=%d", len(devices), wakes)
+	}
+}
+
+func TestRegistryNoWakerFailsFast(t *testing.T) {
+	r := NewRegistry()
+	if _, err := r.Exec(context.Background(), "", "id", time.Second); !errors.Is(err, ErrNoDevice) {
+		t.Fatalf("got %v, want ErrNoDevice", err)
+	}
+	if devices := r.ListAwake(context.Background()); len(devices) != 0 {
+		t.Fatalf("ListAwake without waker returned %d devices", len(devices))
+	}
+}
+
+func TestRegistrySkipsWakeWhenDevicePresent(t *testing.T) {
+	r := NewRegistry(WithWaker(func(context.Context) { t.Error("woke with a device already registered") }, time.Second))
+	r.add(newTestDevice("one", nil))
+	if devices := r.ListAwake(context.Background()); len(devices) != 1 {
+		t.Fatalf("ListAwake returned %d devices", len(devices))
+	}
+}
+
 func TestRegistryExecSuccess(t *testing.T) {
 	r := NewRegistry()
 	server, client := testDevicePair(t)

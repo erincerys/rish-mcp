@@ -31,7 +31,12 @@ func main() {
 		log.Fatal(err)
 	}
 
-	reg := relay.NewRegistry()
+	var regOpts []relay.Option
+	if cfg.wakeURL != "" {
+		regOpts = append(regOpts, relay.WithWaker(ntfyWaker(cfg.wakeURL, cfg.wakeToken, cfg.wakeWait), cfg.wakeWait))
+		log.Printf("device wake enabled: ntfy %s, wait %s", cfg.wakeURL, cfg.wakeWait)
+	}
+	reg := relay.NewRegistry(regOpts...)
 	oauthProvider := oauth.NewProvider(oauth.Config{PublicURL: cfg.publicURL, AIToken: cfg.aiToken, TrustedProxies: cfg.trustedProxies})
 	mux := newMux(reg, oauthProvider, cfg.aiToken, cfg.deviceToken, cfg.defaultTimeout, cfg.maxTimeout)
 	srv := &http.Server{Addr: ":" + cfg.port, Handler: mux}
@@ -65,6 +70,9 @@ type runtimeConfig struct {
 	maxTimeout     time.Duration
 	publicURL      string
 	trustedProxies string
+	wakeURL        string
+	wakeToken      string
+	wakeWait       time.Duration
 }
 
 func loadConfigFromEnv() (runtimeConfig, error) {
@@ -108,7 +116,23 @@ func loadConfigFromEnv() (runtimeConfig, error) {
 	if err != nil || u.Scheme != "http" && u.Scheme != "https" || u.Host == "" {
 		return runtimeConfig{}, errors.New("PUBLIC_URL must be an absolute http(s) URL")
 	}
-	return runtimeConfig{port: port, aiToken: aiToken, deviceToken: deviceToken, defaultTimeout: defaultTimeout, maxTimeout: maxTimeout, publicURL: publicURL, trustedProxies: trustedProxies}, nil
+	wakeURL := os.Getenv("WAKE_NTFY_URL")
+	if wakeURL != "" {
+		w, err := url.Parse(wakeURL)
+		if err != nil || w.Scheme != "http" && w.Scheme != "https" || w.Host == "" {
+			return runtimeConfig{}, errors.New("WAKE_NTFY_URL must be an absolute http(s) topic URL")
+		}
+	}
+	wakeWait, err := envDurationMsChecked("WAKE_WAIT_MS", 30_000)
+	if err != nil {
+		return runtimeConfig{}, err
+	}
+	return runtimeConfig{
+		port: port, aiToken: aiToken, deviceToken: deviceToken,
+		defaultTimeout: defaultTimeout, maxTimeout: maxTimeout,
+		publicURL: publicURL, trustedProxies: trustedProxies,
+		wakeURL: wakeURL, wakeToken: os.Getenv("WAKE_NTFY_TOKEN"), wakeWait: wakeWait,
+	}, nil
 }
 
 // newMux wires the registry, MCP server, OAuth provider, and HTTP routes
@@ -210,7 +234,7 @@ func runShellHandler(reg *relay.Registry, defaultTimeout, maxTimeout time.Durati
 
 func listDevicesHandler(reg *relay.Registry) func(context.Context, json.RawMessage) (mcp.CallResult, error) {
 	return func(ctx context.Context, raw json.RawMessage) (mcp.CallResult, error) {
-		devices := reg.List()
+		devices := reg.ListAwake(ctx)
 		b, err := json.MarshalIndent(devices, "", "  ")
 		if err != nil {
 			return mcp.CallResult{}, err

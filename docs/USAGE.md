@@ -182,6 +182,27 @@ Pairing itself (entering the wireless pairing code) still needs a tap on the
 device the first time — see `docs/DESIGN.md`'s explicit non-goal: full
 headless/no-tap install is no longer a target now that Shizuku is gone.
 
+### 3.4 Staying reachable
+
+Wireless debugging listens on a new random port each time it starts, and
+Android stops it whenever the phone leaves Wi-Fi. The agent recovers on its own:
+
+- When the saved endpoint stops answering, it finds the device's own
+  `adb-tls-connect` endpoint over mDNS, saves it, and reconnects. A command
+  that arrives while the shell is down waits for this attempt.
+- If wireless debugging is off, it turns it back on. This needs a one-time
+  grant: `adb shell pm grant kr.scin.rishmcp android.permission.WRITE_SECURE_SETTINGS`.
+- It restarts itself after an app update.
+
+To reach a phone whose VPN or agent connection has dropped, set
+`WAKE_NTFY_URL` on the relay and subscribe the phone's ntfy app to the same
+topic, named `rish-wake`. A `run_shell` or `list_devices` call that finds no
+device publishes one low-priority message (at most every 30 s) and waits up to
+`WAKE_WAIT_MS`. The agent hears the ntfy app's `io.heckel.ntfy.MESSAGE_RECEIVED`
+broadcast for that topic, asks Tailscale to connect, re-enables wireless
+debugging, and reconnects. The wake only works while the agent service is
+running, and the shell only while the phone is on Wi-Fi.
+
 ---
 
 ## 4. Connect an AI client
@@ -340,6 +361,9 @@ Connection query params on `GET /agent`: `token`, `deviceId`, `name`, `sdk`,
 | `PORT` | | `8080` | Listen port |
 | `DEFAULT_TIMEOUT_MS` | | `60000` | Default per-command timeout |
 | `MAX_TIMEOUT_MS` | | `600000` | Ceiling for a caller-supplied `timeoutMs` |
+| `WAKE_NTFY_URL` | | empty (off) | ntfy topic URL to publish to when a call finds no device (see §3.4) |
+| `WAKE_NTFY_TOKEN` | | empty | ntfy access token for that topic |
+| `WAKE_WAIT_MS` | | `30000` | How long a call waits for a device after a wake |
 
 ### `server/cmd/publicserver`
 
