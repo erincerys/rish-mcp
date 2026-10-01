@@ -15,6 +15,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kr.scin.rishmcp.Prefs.adbHost
 import kr.scin.rishmcp.Prefs.adbPort
 import kr.scin.rishmcp.Prefs.deviceToken
@@ -114,32 +115,47 @@ class ConnectionManager(
         scope.launch {
             if (!shellConnectionMutex.tryLock()) return@launch
             try {
-                if (stopped || shellClient.isConnected) return@launch
-                val host = context.adbHost
-                val port = context.adbPort
-                if (port <= 0) {
-                    AgentState.shell = "not paired"
-                    onStateChanged()
-                    return@launch
-                }
-                AgentState.shell = "connecting…"
-                onStateChanged()
-                val result = try {
-                    if (shellClient.connectDevice(host, port)) "connected" else "connect failed"
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    Log.w(TAG, "adb connect failed", e)
-                    "connect error: ${e.message}"
-                }
-                if (!stopped) {
-                    AgentState.shell = result
-                    onStateChanged()
-                }
+                connectShellLocked()
             } finally {
                 shellConnectionMutex.unlock()
             }
         }
+    }
+
+    private suspend fun connectShellLocked() {
+        if (stopped || shellClient.isConnected) return
+        if (context.adbPort <= 0) {
+            setShell("not paired")
+            return
+        }
+        setShell("connecting…")
+        var result = tryConnect(context.adbHost, context.adbPort)
+        if (result != CONNECTED && !stopped) result = rediscoverAndConnect() ?: result
+        if (!stopped) setShell(result)
+    }
+
+    private suspend fun rediscoverAndConnect(): String? {
+        if (!WirelessDebugging.ensureEnabled(context)) return "wireless debugging is off"
+        val (host, port) = WirelessDebugging.discoverOwnEndpoint(context, DISCOVERY_TIMEOUT_MS) ?: return null
+        if (host == context.adbHost && port == context.adbPort) return null
+        context.adbHost = host
+        context.adbPort = port
+        setShell("connecting to rediscovered $host:$port…")
+        return tryConnect(host, port)
+    }
+
+    private suspend fun tryConnect(host: String, port: Int): String = try {
+        if (shellClient.connectDevice(host, port)) CONNECTED else "connect failed"
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Log.w(TAG, "adb connect failed", e)
+        "connect error: ${e.message}"
+    }
+
+    private fun setShell(state: String) {
+        AgentState.shell = state
+        onStateChanged()
     }
 
     // --- relay WebSocket --------------------------------------------------------
@@ -220,6 +236,7 @@ class ConnectionManager(
                 return
             }
             scope.launch {
+                if (!shellClient.isConnected) shellConnectionMutex.withLock { connectShellLocked() }
                 val result = try {
                     shellClient.exec(cmd, timeoutMs)
                 } catch (e: Throwable) {
@@ -338,5 +355,7 @@ class ConnectionManager(
     companion object {
         private const val TAG = "rishmcp"
         private const val MAX_CMD_LEN = 64 * 1024 // 64 KiB, symmetric with relay maxCmdLen
+        private const val CONNECTED = "connected"
+        private const val DISCOVERY_TIMEOUT_MS = 10_000L
     }
 }
