@@ -109,6 +109,18 @@ class ConnectionManager(
         connectRelay()
     }
 
+    fun ensureRelayConnected(reason: String) {
+        if (stopped) return
+        backoffMs.set(1000)
+        ensureShellConnected()
+        if (!relayDown()) return
+        AgentState.lastEvent = "reconnect: $reason"
+        connectRelay()
+    }
+
+    private fun relayDown(): Boolean =
+        AgentState.conn != AgentState.Conn.CONNECTED && AgentState.conn != AgentState.Conn.CONNECTING
+
     // --- ADB shell connection -------------------------------------------------
 
     private fun ensureShellConnected() {
@@ -193,12 +205,11 @@ class ConnectionManager(
         ws = http.newWebSocket(Request.Builder().url(full).build(), listener(epoch))
     }
 
+    private val relayRetry = Runnable { if (relayDown()) connectRelay() }
     private fun scheduleReconnect() {
         if (stopped) return
-        main.postDelayed(
-            { if (AgentState.conn != AgentState.Conn.CONNECTED) connectRelay() },
-            backoffMs.get(),
-        )
+        main.removeCallbacks(relayRetry)
+        main.postDelayed(relayRetry, backoffMs.get())
         backoffMs.set((backoffMs.get() * 2).coerceAtMost(30_000))
     }
 
@@ -332,7 +343,11 @@ class ConnectionManager(
         }
     }
 
-    private val switchReconnect = Runnable { forceReconnect("network switch") }
+    private val switchReconnect = Runnable {
+        val onCurrentNetwork = AgentState.conn == AgentState.Conn.CONNECTED &&
+            connectedNetHandle == connectivity.activeNetwork?.networkHandle
+        if (!onCurrentNetwork) forceReconnect("network switch")
+    }
     private fun scheduleSwitchReconnect() {
         if (stopped) return
         main.removeCallbacks(switchReconnect)
@@ -345,9 +360,7 @@ class ConnectionManager(
         override fun run() {
             if (stopped) return
             ensureShellConnected()
-            if (AgentState.conn != AgentState.Conn.CONNECTED && AgentState.conn != AgentState.Conn.CONNECTING) {
-                connectRelay()
-            }
+            if (relayDown()) connectRelay()
             main.postDelayed(this, DeviceProfile.heartbeatMs(context))
         }
     }
