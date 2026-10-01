@@ -7,7 +7,6 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.os.Process
 import android.view.View
 import android.widget.TextView
 import android.widget.Toast
@@ -112,12 +111,6 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() { super.onResume(); ui.post(ticker) }
     override fun onPause() { super.onPause(); ui.removeCallbacks(ticker) }
 
-    /**
-     * Headless provisioning from a shell:
-     *   am start -n kr.scin.rishmcp/.MainActivity \
-     *     --es relay wss://mcp.example.com/agent --es token <DEVICE_TOKEN> \
-     *     --ei adbPort <PORT> --ez autostart true
-     */
     private fun handleProvisioning(intent: Intent?) {
         intent ?: return
         if (!isShellProvisioningCaller(intent)) return
@@ -125,6 +118,7 @@ class MainActivity : AppCompatActivity() {
         var changed = false
         intent.getStringExtra("relay")?.let { relayUrl = it; relayField.setText(it); changed = true }
         intent.getStringExtra("token")?.let { deviceToken = it; tokenField.setText(it); changed = true }
+        intent.getStringExtra("adbHost")?.let { adbHost = it; adbHostField.setText(it); changed = true }
         if (intent.hasExtra("adbPort")) {
             val port = intent.getIntExtra("adbPort", 0)
             if (port > 0) {
@@ -143,19 +137,8 @@ class MainActivity : AppCompatActivity() {
         render()
     }
 
-    /**
-     * Only the adb shell (uid 2000) may use the unattended provisioning
-     * extras. The launcher start carries no extras and is always allowed;
-     * `am start` from any other app is ignored. `getLaunchedFromUid()` is
-     * available from API 1 and returns:
-     *  - `-1` when launched from the launcher (no extras → ignored below)
-     *  - `Process.SHELL_UID` (2000) when launched from `adb shell am start`
-     *  - any other uid when launched from a third-party app (rejected)
-     */
-    private fun isShellProvisioningCaller(intent: Intent): Boolean {
-        if (intent.extras == null) return false
-        return getLaunchedFromUid() == Process.SHELL_UID
-    }
+    private fun isShellProvisioningCaller(intent: Intent): Boolean =
+        intent.extras != null && intent.component?.className == "$packageName.ShellProvision"
 
     private fun pairAdb() {
         val port = pairingPortField.text.toString().trim().toIntOrNull()

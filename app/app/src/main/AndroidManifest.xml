@@ -32,6 +32,14 @@
             </intent-filter>
         </activity>
 
+        <!-- DUMP is held by the adb shell and is not grantable to ordinary
+             apps, so only `adb shell am start` can launch it. -->
+        <activity-alias
+            android:name=".ShellProvision"
+            android:exported="true"
+            android:permission="android.permission.DUMP"
+            android:targetActivity=".MainActivity" />
+
         <service
             android:name=".AgentService"
             android:exported="false"

@@ -167,13 +167,16 @@ works around.
 
 ### 3.3 Headless provisioning
 
-The `am start` extras still work, now including `adbPort`:
+Launch the `.ShellProvision` alias with any of these extras:
 
 ```bash
-adb shell am start -n kr.scin.rishmcp/.MainActivity \
+adb shell am start -n kr.scin.rishmcp/.ShellProvision \
   --es relay wss://mcp.example.com/agent --es token <DEVICE_TOKEN> \
-  --ei adbPort <PORT> --ez autostart true
+  --es adbHost <WIFI_IP> --ei adbPort <PORT> --ez autostart true
 ```
+
+The alias requires `android.permission.DUMP`, which the adb shell holds and
+other apps cannot obtain. Extras sent to `.MainActivity` directly are ignored.
 
 Pairing itself (entering the wireless pairing code) still needs a tap on the
 device the first time — see `docs/DESIGN.md`'s explicit non-goal: full
