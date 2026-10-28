@@ -124,6 +124,21 @@
                     android:alpha="0.7"
                     android:layout_marginBottom="10dp" />
 
+                <com.google.android.material.textfield.TextInputLayout
+                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="10dp"
+                    android:hint="ADB host (IP)">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/adbHostField"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="text"
+                        android:maxLines="1" />
+                </com.google.android.material.textfield.TextInputLayout>
+
                 <LinearLayout
                     android:id="@+id/pairingSection"
                     android:layout_width="match_parent"
