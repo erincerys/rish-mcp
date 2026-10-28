@@ -82,9 +82,9 @@ class MainActivity : AppCompatActivity() {
         val hasWirelessPairing = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
         pairingSection.visibility = if (hasWirelessPairing) View.VISIBLE else View.GONE
         pairHint.text = if (hasWirelessPairing) {
-            "설정 → 개발자 옵션 → 무선 디버깅 → 페어링 코드로 기기 페어링에서 확인한 포트/코드를 입력하세요"
+            "Enter the port/code shown in Settings → Developer options → Wireless debugging → Pair device with pairing code"
         } else {
-            "Android 11 미만: PC에서 adb로 'adb tcpip <port>'를 1회 실행한 뒤, 그 포트만 아래에 입력하세요"
+            "Below Android 11: run 'adb tcpip <port>' once from a PC, then enter only that port below"
         }
 
         findViewById<MaterialButton>(R.id.btnPair).setOnClickListener { pairAdb() }
@@ -157,7 +157,7 @@ class MainActivity : AppCompatActivity() {
         val port = pairingPortField.text.toString().trim().toIntOrNull()
         val code = pairingCodeField.text.toString().trim()
         if (port == null || port <= 0 || code.isBlank()) {
-            toast("pairing port와 code를 입력하세요")
+            toast("Enter the pairing port and code")
             return
         }
         lifecycleScope.launch {
@@ -169,7 +169,7 @@ class MainActivity : AppCompatActivity() {
                 false
             }
             AgentState.shell = if (ok) "paired" else "pairing failed"
-            toast(if (ok) "페어링 완료 — 아래 Connect port도 입력하고 저장하세요" else "페어링 실패")
+            toast(if (ok) "Paired. Also enter and save the Connect port below" else "Pairing failed")
             render()
         }
     }
@@ -177,11 +177,11 @@ class MainActivity : AppCompatActivity() {
     private fun saveAdbPort() {
         val port = connectPortField.text.toString().trim().toIntOrNull()
         if (port == null || port <= 0) {
-            toast("포트를 입력하세요")
+            toast("Enter a port")
             return
         }
         adbPort = port
-        toast("adb port 저장됨")
+        toast("adb port saved")
         if (AgentState.serviceRunning) AgentService.start(this, reconnect = true)
         render()
     }
