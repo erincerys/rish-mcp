@@ -30,7 +30,7 @@ class AgentService : Service() {
             if (intent.getStringExtra("topic") != WAKE_TOPIC) return
             sendBroadcast(Intent(TAILSCALE_CONNECT).setClassName(TAILSCALE_PKG, "$TAILSCALE_PKG.IPNReceiver"))
             WirelessDebugging.ensureEnabled(context)
-            connectionManager.forceReconnect("wake")
+            connectionManager.ensureRelayConnected("wake")
         }
     }
 
