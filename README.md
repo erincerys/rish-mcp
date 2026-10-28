@@ -19,6 +19,20 @@
 > [!CAUTION]
 > GitHub releases `v0.2.0` through `v0.5.0` belong to the legacy Shizuku-based implementation. The rewrite uses the separate `agent-v*` release channel. The current signed preview is `agent-v0.1.0`.
 
+## Changes in this fork
+
+This fork of [turin-dev/rish-mcp](https://github.com/turin-dev/rish-mcp) tracks upstream `master` and adds:
+
+- Wireless-debugging pairing works on devices where it used to fail, and a failed pairing shows its error.
+- The ADB host is configurable for pairing and connecting.
+- The app no longer freezes while reconnecting to an unreachable endpoint.
+- Headless provisioning over `adb shell` works on Android 14 and later ([USAGE §3.3](docs/USAGE.md#33-headless-provisioning)).
+- The agent recovers its shell connection without USB, and the relay can wake a disconnected device through ntfy ([USAGE §3.4](docs/USAGE.md#34-staying-reachable)).
+- The relay stops keepalive pings while no MCP client is active, so an idle device can sleep.
+- The remaining UI text is in English.
+
+The release APKs linked below are upstream's and don't include these changes. Build the app from source to get them.
+
 ## What is rish-mcp?
 
 rish-mcp exposes an Android device's own shell (`uid 2000`, equivalent to `adb shell`) as MCP tools for AI clients.
