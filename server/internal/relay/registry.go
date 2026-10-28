@@ -97,10 +97,29 @@ type DeviceInfo struct {
 type Registry struct {
 	mu      sync.RWMutex
 	devices map[string]*Device
+
+	activityMu   sync.Mutex
+	lastActivity time.Time
 }
 
 func NewRegistry() *Registry {
 	return &Registry{devices: make(map[string]*Device)}
+}
+
+// touchActivity marks the relay as having served an MCP call just now. The
+// agent ping loop uses this to stay silent while no session is active, so an
+// idle phone's radio can sleep.
+func (r *Registry) touchActivity() {
+	r.activityMu.Lock()
+	r.lastActivity = time.Now()
+	r.activityMu.Unlock()
+}
+
+// ActiveWithin reports whether any MCP call was served in the last window.
+func (r *Registry) ActiveWithin(window time.Duration) bool {
+	r.activityMu.Lock()
+	defer r.activityMu.Unlock()
+	return !r.lastActivity.IsZero() && time.Since(r.lastActivity) <= window
 }
 
 // add installs d as the current owner of its device ID and returns the
@@ -130,6 +149,7 @@ func (r *Registry) get(id string) (*Device, bool) {
 
 // List returns a snapshot of every connected device.
 func (r *Registry) List() []DeviceInfo {
+	r.touchActivity()
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	out := make([]DeviceInfo, 0, len(r.devices))
@@ -204,6 +224,7 @@ func (r *Registry) resolve(deviceID string) (*Device, error) {
 // the timeout elapses (plus a grace period for the round trip), or ctx is
 // cancelled.
 func (r *Registry) Exec(ctx context.Context, deviceID, cmd string, timeout time.Duration) (Result, error) {
+	r.touchActivity()
 	d, err := r.resolve(deviceID)
 	if err != nil {
 		return Result{}, err

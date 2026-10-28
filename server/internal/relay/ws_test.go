@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -751,6 +752,7 @@ func TestRegisterAgentStaleDisconnect(t *testing.T) {
 	t.Cleanup(func() { log.SetOutput(old) })
 
 	reg := NewRegistry()
+	reg.touchActivity()
 	server, client := testDevicePair(t)
 	t.Cleanup(func() { client.Close() })
 
@@ -829,6 +831,7 @@ func TestRegisterAgentPingFailed(t *testing.T) {
 	t.Cleanup(func() { log.SetOutput(old) })
 
 	reg := NewRegistry()
+	reg.touchActivity()
 	server, client := testDevicePair(t)
 
 	q := url.Values{"deviceId": {"ping-fail-test"}}
@@ -852,6 +855,55 @@ func TestRegisterAgentPingFailed(t *testing.T) {
 		t.Fatalf("expected 'ping failed' in log, got: %s", logOutput)
 	}
 	_ = client
+}
+
+// --- idle gating test ---
+
+// TestRegisterAgentIdleNoPings verifies that with no recent MCP activity the
+// ping loop stays silent (no pings, no stale termination), and that pings
+// resume once the registry sees activity.
+func TestRegisterAgentIdleNoPings(t *testing.T) {
+	reg := NewRegistry()
+	server, client := testDevicePair(t)
+	t.Cleanup(func() { client.Close() })
+
+	var pings atomic.Int32
+	client.SetPingHandler(func(string) error {
+		pings.Add(1)
+		return nil
+	})
+	go func() {
+		for {
+			if _, _, err := client.ReadMessage(); err != nil {
+				return
+			}
+		}
+	}()
+
+	q := url.Values{"deviceId": {"idle-test"}}
+	done := startRegisterAgentPingForTest(t, reg, server, q, 10*time.Millisecond)
+
+	// Idle: many ticks pass with no activity — no pings, no stale disconnect.
+	time.Sleep(100 * time.Millisecond)
+	if n := pings.Load(); n != 0 {
+		t.Fatalf("expected no pings while idle, got %d", n)
+	}
+	if _, err := reg.resolve("idle-test"); err != nil {
+		t.Fatalf("expected device to stay registered while idle, got %v", err)
+	}
+
+	// Activity resumes: pings should start flowing again.
+	reg.touchActivity()
+	deadline := time.Now().Add(2 * time.Second)
+	for pings.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if pings.Load() == 0 {
+		t.Fatal("expected pings to resume after activity, got none")
+	}
+
+	_ = client.Close()
+	waitForRelayDone(t, "idle-gating registerAgentPing", done)
 }
 
 // --- truncated frame test ---
