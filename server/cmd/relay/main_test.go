@@ -263,6 +263,7 @@ func withRelayEnv(t *testing.T, env map[string]string, fn func()) {
 	for _, k := range []string{
 		"PORT", "AI_TOKEN", "DEVICE_TOKEN", "DEFAULT_TIMEOUT_MS",
 		"MAX_TIMEOUT_MS", "PUBLIC_URL", "TRUSTED_PROXIES",
+		"WAKE_NTFY_URL", "WAKE_NTFY_TOKEN", "WAKE_WAIT_MS",
 	} {
 		saved[k] = os.Getenv(k)
 		os.Unsetenv(k)
