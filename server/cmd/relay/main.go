@@ -33,7 +33,7 @@ func main() {
 
 	var regOpts []relay.Option
 	if cfg.wakeURL != "" {
-		regOpts = append(regOpts, relay.WithWaker(ntfyWaker(cfg.wakeURL, cfg.wakeToken, cfg.wakeWait), cfg.wakeWait))
+		regOpts = append(regOpts, relay.WithWaker(ntfyWaker(cfg.wakeURL, cfg.wakeToken, cfg.deviceToken, cfg.wakeWait), cfg.wakeWait))
 		log.Printf("device wake enabled: ntfy %s, wait %s", cfg.wakeURL, cfg.wakeWait)
 	}
 	reg := relay.NewRegistry(regOpts...)

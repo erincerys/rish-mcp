@@ -198,10 +198,18 @@ To reach a phone whose VPN or agent connection has dropped, set
 `WAKE_NTFY_URL` on the relay and subscribe the phone's ntfy app to the same
 topic, named `rish-wake`. A `run_shell` or `list_devices` call that finds no
 device publishes one low-priority message (at most every 30 s) and waits up to
-`WAKE_WAIT_MS`. The agent hears the ntfy app's `io.heckel.ntfy.MESSAGE_RECEIVED`
-broadcast for that topic, asks Tailscale to connect, re-enables wireless
-debugging, and reconnects. The wake only works while the agent service is
-running, and the shell only while the phone is on Wi-Fi.
+`WAKE_WAIT_MS`. The agent hears the ntfy app's
+`io.heckel.ntfy.MESSAGE_RECEIVED` broadcast for that topic, asks Tailscale to
+connect, re-enables wireless debugging, and reconnects. The wake only works
+while the agent service is running, and the shell only while the phone is on
+Wi-Fi.
+
+The ntfy app re-broadcasts every message to all apps on the phone, and the
+broadcast does not say who sent it. So the message body is a timestamp signed
+with `DEVICE_TOKEN` (HMAC-SHA256), and the agent ignores any broadcast for the
+topic whose body does not verify or is more than ten minutes old. The relay and
+the app must be updated together: an older relay sends an unsigned body, and the
+updated app ignores it.
 
 ---
 

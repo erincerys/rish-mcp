@@ -9,7 +9,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.IBinder
+import android.util.Log
 import androidx.core.content.ContextCompat
+import kr.scin.rishmcp.Prefs.deviceToken
 
 /**
  * Always-on foreground service. Holds the relay connection (via
@@ -28,6 +30,11 @@ class AgentService : Service() {
     private val wakeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.getStringExtra("topic") != WAKE_TOPIC) return
+            val body = intent.getStringExtra("message").orEmpty()
+            if (!WakeAuth.verify(context.deviceToken, body, System.currentTimeMillis() / 1000)) {
+                Log.w(TAG, "ignored wake broadcast that failed authentication")
+                return
+            }
             sendBroadcast(Intent(TAILSCALE_CONNECT).setClassName(TAILSCALE_PKG, "$TAILSCALE_PKG.IPNReceiver"))
             WirelessDebugging.ensureEnabled(context)
             connectionManager.ensureRelayConnected("wake")
@@ -96,6 +103,7 @@ class AgentService : Service() {
     }
 
     companion object {
+        private const val TAG = "AgentService"
         private const val CHANNEL = "rishmcp-agent"
         private const val NOTIF_ID = 42
         private const val NTFY_MESSAGE_RECEIVED = "io.heckel.ntfy.MESSAGE_RECEIVED"
