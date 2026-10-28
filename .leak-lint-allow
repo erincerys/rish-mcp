@@ -1,0 +1,2 @@
+# Upstream's Go tests use RFC 1918 example addresses as fixtures.
+server/*_test.go:192[.]168[.]1[.][0-9]+
