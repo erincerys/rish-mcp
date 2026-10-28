@@ -8,11 +8,13 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kr.scin.rishmcp.Prefs.adbHost
 import kr.scin.rishmcp.Prefs.adbPort
 import kr.scin.rishmcp.Prefs.deviceToken
@@ -72,6 +74,7 @@ class ConnectionManager(
      * Android dependencies.
      */
     private val epochGate = EpochGate()
+    private val shellConnectionMutex = Mutex()
 
     fun start() {
         stopped = false
@@ -108,24 +111,34 @@ class ConnectionManager(
     // --- ADB shell connection -------------------------------------------------
 
     private fun ensureShellConnected() {
-        if (shellClient.isConnected) return
-        val host = context.adbHost
-        val port = context.adbPort
-        if (port <= 0) {
-            AgentState.shell = "not paired"
-            onStateChanged()
-            return
-        }
         scope.launch {
-            AgentState.shell = "connecting…"
-            onStateChanged()
-            AgentState.shell = try {
-                if (shellClient.connectDevice(host, port)) "connected" else "connect failed"
-            } catch (e: Throwable) {
-                Log.w(TAG, "adb connect failed", e)
-                "connect error: ${e.message}"
+            if (!shellConnectionMutex.tryLock()) return@launch
+            try {
+                if (stopped || shellClient.isConnected) return@launch
+                val host = context.adbHost
+                val port = context.adbPort
+                if (port <= 0) {
+                    AgentState.shell = "not paired"
+                    onStateChanged()
+                    return@launch
+                }
+                AgentState.shell = "connecting…"
+                onStateChanged()
+                val result = try {
+                    if (shellClient.connectDevice(host, port)) "connected" else "connect failed"
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "adb connect failed", e)
+                    "connect error: ${e.message}"
+                }
+                if (!stopped) {
+                    AgentState.shell = result
+                    onStateChanged()
+                }
+            } finally {
+                shellConnectionMutex.unlock()
             }
-            onStateChanged()
         }
     }
 
