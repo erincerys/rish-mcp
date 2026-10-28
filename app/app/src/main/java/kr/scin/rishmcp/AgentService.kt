@@ -4,9 +4,12 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.os.IBinder
+import androidx.core.content.ContextCompat
 
 /**
  * Always-on foreground service. Holds the relay connection (via
@@ -22,6 +25,15 @@ class AgentService : Service() {
 
     private lateinit var connectionManager: ConnectionManager
 
+    private val wakeReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.getStringExtra("topic") != WAKE_TOPIC) return
+            sendBroadcast(Intent(TAILSCALE_CONNECT).setClassName(TAILSCALE_PKG, "$TAILSCALE_PKG.IPNReceiver"))
+            WirelessDebugging.ensureEnabled(context)
+            connectionManager.forceReconnect("wake")
+        }
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -34,6 +46,12 @@ class AgentService : Service() {
             onStateChanged = ::updateNotif,
         )
         connectionManager.start()
+        ContextCompat.registerReceiver(
+            this,
+            wakeReceiver,
+            IntentFilter(NTFY_MESSAGE_RECEIVED),
+            ContextCompat.RECEIVER_EXPORTED,
+        )
         updateNotif()
     }
 
@@ -49,6 +67,7 @@ class AgentService : Service() {
     override fun onDestroy() {
         AgentState.serviceRunning = false
         AgentState.conn = AgentState.Conn.IDLE
+        unregisterReceiver(wakeReceiver)
         connectionManager.stop()
         super.onDestroy()
     }
@@ -79,6 +98,10 @@ class AgentService : Service() {
     companion object {
         private const val CHANNEL = "rishmcp-agent"
         private const val NOTIF_ID = 42
+        private const val NTFY_MESSAGE_RECEIVED = "io.heckel.ntfy.MESSAGE_RECEIVED"
+        private const val WAKE_TOPIC = "rish-wake"
+        private const val TAILSCALE_PKG = "com.tailscale.ipn"
+        private const val TAILSCALE_CONNECT = "com.tailscale.ipn.CONNECT_VPN"
 
         fun start(ctx: Context, reconnect: Boolean = false) {
             val intent = Intent(ctx, AgentService::class.java).putExtra("reconnect", reconnect)
