@@ -169,12 +169,14 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             AgentState.shell = "pairing…"
             render()
+            var err: String? = null
             val ok = try {
                 AdbShellClient.getInstance(this@MainActivity).pairWireless(host, port, code)
             } catch (e: Throwable) {
+                err = e.toString()
                 false
             }
-            AgentState.shell = if (ok) "paired" else "pairing failed"
+            AgentState.shell = if (ok) "paired" else "pairing failed" + (err?.let { ": $it" } ?: "")
             toast(if (ok) "Paired. Also enter and save the Connect port below" else "Pairing failed")
             render()
         }
